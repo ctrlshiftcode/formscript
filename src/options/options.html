@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FormScript - Configuracoes</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="../../assets/icons/favico.png" alt="">
+        <div>
+          <h1>FormScript</h1>
+          <p>Configuracoes e dados locais</p>
+        </div>
+      </header>
+
+      <section aria-labelledby="preferences-heading">
+        <h2 id="preferences-heading">Preferencias</h2>
+        <label class="setting">
+          <input id="ask-before-save" type="checkbox">
+          <span>
+            <strong>Perguntar antes de salvar</strong>
+            <small>Exibir uma notificacao apos o envio de um formulario novo.</small>
+          </span>
+        </label>
+        <label class="setting">
+          <input id="fill-only-empty" type="checkbox">
+          <span>
+            <strong>Preencher somente campos vazios</strong>
+            <small>Manter os valores que ja estao preenchidos na pagina.</small>
+          </span>
+        </label>
+      </section>
+
+      <section aria-labelledby="backup-heading">
+        <h2 id="backup-heading">Backup e restauracao</h2>
+        <p>O backup contem os formularios salvos e suas preferencias. Ele pode incluir dados pessoais; guarde o arquivo com cuidado.</p>
+        <div class="actions">
+          <button id="export-backup" class="primary" type="button">Baixar backup</button>
+          <button id="restore-backup" class="secondary" type="button">Restaurar backup</button>
+          <input id="backup-file" type="file" accept="application/json,.json" hidden>
+        </div>
+      </section>
+
+      <section aria-labelledby="saved-forms-heading">
+        <h2 id="saved-forms-heading">Formularios armazenados</h2>
+        <div class="saved-forms-heading">
+          <p id="saved-forms-summary">Carregando formularios salvos...</p>
+          <button id="delete-all-forms" class="danger" type="button">Excluir todos</button>
+        </div>
+        <div id="saved-forms" class="saved-forms"></div>
+      </section>
+
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,82 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", sans-serif;
+  background: #f5f7f4;
+  color: #182522;
+}
+
+body {
+  width: 280px;
+  margin: 0;
+}
+
+main {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #dce3dd;
+}
+
+header img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 5px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 3px solid #e19a42;
+  outline-offset: 2px;
+}
+
+.primary {
+  background: #176b56;
+  color: #fff;
+}
+
+.primary:hover {
+  background: #105642;
+}
+
+.secondary {
+  background: #e6ece7;
+  color: #24443a;
+}
+
+.secondary:hover {
+  background: #d8e2da;
+}
+
+p {
+  min-height: 36px;
+  margin: 0;
+  color: #52625b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}

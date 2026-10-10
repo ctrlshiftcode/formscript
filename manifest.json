@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "FormScript",
+  "version": "0.1.0",
+  "description": "Extensao FormScript para Chrome e Brave.",
+  "minimum_chrome_version": "102",
+  "permissions": ["activeTab", "contextMenus", "storage"],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/favico.png",
+      "32": "assets/icons/favico.png"
+    }
+  },
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content/content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "assets/icons/favico.png",
+    "32": "assets/icons/favico.png",
+    "48": "assets/icons/favico.png",
+    "128": "assets/icons/favico.png"
+  }
+}

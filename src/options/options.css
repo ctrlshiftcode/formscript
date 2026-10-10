@@ -1,0 +1,199 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", sans-serif;
+  background: #f4f6f3;
+  color: #182522;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  width: min(100% - 40px, 680px);
+  margin: 48px auto;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #d7dfd8;
+}
+
+header img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 24px;
+}
+
+header p {
+  margin-top: 3px;
+  color: #52625b;
+}
+
+section {
+  padding: 24px 0;
+  border-bottom: 1px solid #d7dfd8;
+}
+
+h2 {
+  margin-bottom: 16px;
+  font-size: 17px;
+}
+
+.setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+
+.setting input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: #176b56;
+}
+
+.setting span {
+  display: grid;
+  gap: 4px;
+}
+
+.setting small,
+section > p {
+  color: #52625b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.saved-forms-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.saved-forms-heading p {
+  color: #52625b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.saved-forms {
+  margin-top: 12px;
+}
+
+.saved-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid #d7dfd8;
+}
+
+.saved-form-details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.saved-form-details strong {
+  overflow-wrap: anywhere;
+}
+
+.saved-form-details small,
+.saved-forms-empty {
+  color: #52625b;
+  font-size: 13px;
+}
+
+button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 5px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #e19a42;
+  outline-offset: 2px;
+}
+
+.primary {
+  background: #176b56;
+  color: #fff;
+}
+
+.primary:hover {
+  background: #105642;
+}
+
+.secondary {
+  background: #e6ece7;
+  color: #24443a;
+}
+
+.secondary:hover {
+  background: #d8e2da;
+}
+
+.danger {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 12px;
+  background: #f5e7e4;
+  color: #922f29;
+}
+
+.danger:hover {
+  background: #efd6d1;
+}
+
+#status {
+  min-height: 24px;
+  padding-top: 14px;
+  color: #176b56;
+  font-size: 14px;
+}
+
+@media (max-width: 480px) {
+  main {
+    width: calc(100% - 28px);
+    margin: 28px auto;
+  }
+
+  .saved-forms-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
