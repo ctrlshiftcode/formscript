@@ -34,9 +34,10 @@ async function saveSettings() {
     fillOnlyEmpty: fillOnlyEmpty.checked
   };
   await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
-  showStatus("Preferencias salvas neste navegador.");
+  showStatus("Preferences saved in this browser.");
 }
 
+// Show site names and field counts without exposing saved field values.
 async function loadSavedForms() {
   const stored = await chrome.storage.local.get(null);
   const records = Object.entries(stored)
@@ -46,14 +47,14 @@ async function loadSavedForms() {
 
   savedFormsContainer.replaceChildren();
   savedFormsSummary.textContent = records.length === 1
-    ? "1 formulario salvo neste navegador."
-    : `${records.length} formularios salvos neste navegador.`;
+    ? "1 saved form in this browser."
+    : `${records.length} saved forms in this browser.`;
   deleteAllFormsButton.disabled = records.length === 0;
 
   if (records.length === 0) {
     const emptyMessage = document.createElement("p");
     emptyMessage.className = "saved-forms-empty";
-    emptyMessage.textContent = "Nenhum formulario armazenado.";
+    emptyMessage.textContent = "No saved forms.";
     savedFormsContainer.append(emptyMessage);
     return;
   }
@@ -69,14 +70,14 @@ async function loadSavedForms() {
     siteName.textContent = host;
     const fieldCount = document.createElement("small");
     const count = Array.isArray(record.fields) ? record.fields.length : 0;
-    fieldCount.textContent = `${count} campos salvos`;
+    fieldCount.textContent = `${count} saved fields`;
     details.append(siteName, fieldCount);
 
     const deleteButton = document.createElement("button");
     deleteButton.className = "danger";
     deleteButton.type = "button";
-    deleteButton.textContent = "Excluir";
-    deleteButton.setAttribute("aria-label", `Excluir dados salvos de ${host}`);
+    deleteButton.textContent = "Delete";
+    deleteButton.setAttribute("aria-label", `Delete saved form data for ${host}`);
     deleteButton.addEventListener("click", () => void deleteSavedForm(key, host));
 
     row.append(details, deleteButton);
@@ -85,21 +86,21 @@ async function loadSavedForms() {
 }
 
 async function deleteSavedForm(key, host) {
-  if (!window.confirm(`Excluir os dados de formulario salvos para ${host}?`)) return;
+  if (!window.confirm(`Delete saved form data for ${host}?`)) return;
   await chrome.storage.local.remove(key);
   await loadSavedForms();
-  showStatus(`Dados salvos de ${host} excluidos.`);
+  showStatus(`Saved form data for ${host} deleted.`);
 }
 
 async function deleteAllSavedForms() {
   const stored = await chrome.storage.local.get(null);
   const formKeys = Object.keys(stored).filter((key) => key.startsWith(FORM_PREFIX));
   if (formKeys.length === 0) return;
-  if (!window.confirm(`Excluir os dados de todos os ${formKeys.length} formularios salvos?`)) return;
+  if (!window.confirm(`Delete saved data for all ${formKeys.length} forms?`)) return;
 
   await chrome.storage.local.remove(formKeys);
   await loadSavedForms();
-  showStatus("Todos os dados de formularios foram excluidos.");
+  showStatus("All saved form data has been deleted.");
 }
 
 function isValidFormEntry(entry) {
@@ -137,6 +138,7 @@ function isValidFormEntry(entry) {
   }
 }
 
+// Validate imported data before it can replace records in browser storage.
 function validateBackup(backup) {
   if (
     !backup ||
@@ -146,7 +148,7 @@ function validateBackup(backup) {
     backup.forms.length > 1000 ||
     !backup.forms.every(isValidFormEntry)
   ) {
-    throw new Error("O arquivo nao e um backup FormScript valido.");
+    throw new Error("This file is not a valid FormScript backup.");
   }
 
   const settings = backup.settings && typeof backup.settings === "object" ? backup.settings : {};
@@ -179,14 +181,14 @@ async function exportBackup() {
   link.download = `formscript-backup-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-  showStatus(`${forms.length} formularios incluidos no backup.`);
+  showStatus(`${forms.length} forms included in the backup.`);
 }
 
 async function restoreBackup(file) {
-  if (file.size > 10 * 1024 * 1024) throw new Error("O arquivo excede o limite de 10 MB.");
+  if (file.size > 10 * 1024 * 1024) throw new Error("The file exceeds the 10 MB limit.");
   const backup = validateBackup(JSON.parse(await file.text()));
   const accepted = window.confirm(
-    `Restaurar ${backup.forms.length} formularios e substituir os dados FormScript atuais neste navegador?`
+    `Restore ${backup.forms.length} forms and replace the current FormScript data in this browser?`
   );
   if (!accepted) return;
 
@@ -199,15 +201,15 @@ async function restoreBackup(file) {
   await chrome.storage.local.set(restoredData);
   await loadSettings();
   await loadSavedForms();
-  showStatus(`Backup restaurado: ${backup.forms.length} formularios.`);
+  showStatus(`Backup restored: ${backup.forms.length} forms.`);
 }
 
-askBeforeSave.addEventListener("change", () => void saveSettings().catch(() => showStatus("Falha ao salvar preferencias.", true)));
-fillOnlyEmpty.addEventListener("change", () => void saveSettings().catch(() => showStatus("Falha ao salvar preferencias.", true)));
-exportButton.addEventListener("click", () => void exportBackup().catch(() => showStatus("Falha ao criar o backup.", true)));
+askBeforeSave.addEventListener("change", () => void saveSettings().catch(() => showStatus("Could not save preferences.", true)));
+fillOnlyEmpty.addEventListener("change", () => void saveSettings().catch(() => showStatus("Could not save preferences.", true)));
+exportButton.addEventListener("click", () => void exportBackup().catch(() => showStatus("Could not create the backup.", true)));
 restoreButton.addEventListener("click", () => backupFile.click());
 deleteAllFormsButton.addEventListener("click", () => {
-  void deleteAllSavedForms().catch(() => showStatus("Falha ao excluir os formularios.", true));
+  void deleteAllSavedForms().catch(() => showStatus("Could not delete saved forms.", true));
 });
 backupFile.addEventListener("change", async () => {
   const [file] = backupFile.files || [];
@@ -216,7 +218,7 @@ backupFile.addEventListener("change", async () => {
   try {
     await restoreBackup(file);
   } catch (error) {
-    showStatus(error.message || "Falha ao restaurar o backup.", true);
+    showStatus(error.message || "Could not restore the backup.", true);
   } finally {
     backupFile.value = "";
   }
@@ -224,10 +226,10 @@ backupFile.addEventListener("change", async () => {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "local" && Object.keys(changes).some((key) => key.startsWith(FORM_PREFIX))) {
-    void loadSavedForms().catch(() => showStatus("Falha ao carregar formularios salvos.", true));
+    void loadSavedForms().catch(() => showStatus("Could not load saved forms.", true));
   }
 });
 
 void Promise.all([loadSettings(), loadSavedForms()]).catch(() => {
-  showStatus("Falha ao carregar as configuracoes.", true);
+  showStatus("Could not load settings.", true);
 });

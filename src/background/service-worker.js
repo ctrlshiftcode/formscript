@@ -2,6 +2,7 @@ const FORM_PREFIX = "formscript:form:";
 const SETTINGS_KEY = "formscript:settings";
 const PENDING_PREFIX = "pending:";
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+const FILL_CONTEXT_MENU_ID = "formscript-fill-form";
 
 function consentIdFor(formKey) {
   let hash = 2166136261;
@@ -12,6 +13,7 @@ function consentIdFor(formKey) {
   return `formscript-${(hash >>> 0).toString(16)}`;
 }
 
+// Accept page messages only when their sender matches the claimed HTTP(S) origin.
 function isFormMessageFromPage(message, sender) {
   if (sender.id !== chrome.runtime.id || !sender.tab?.id || !sender.url) return false;
 
@@ -23,6 +25,7 @@ function isFormMessageFromPage(message, sender) {
   }
 }
 
+// Limit field count and value size before keeping submitted data in extension storage.
 function sanitizeFields(fields) {
   if (!Array.isArray(fields)) return [];
 
@@ -58,8 +61,8 @@ function sanitizeFields(fields) {
 }
 
 async function openConsentWindow(consentId, origin, fieldCount, isUpdate) {
-  const width = 420;
-  const height = 280;
+  const width = 280;
+  const height = 60;
   const focusedWindow = await new Promise((resolve) => {
     chrome.windows.getLastFocused({}, resolve);
   });
@@ -79,7 +82,7 @@ async function openConsentWindow(consentId, origin, fieldCount, isUpdate) {
 
   if (focusedWindow && Number.isFinite(focusedWindow.left) && Number.isFinite(focusedWindow.top)) {
     createOptions.left = Math.round(Math.max(focusedWindow.left, focusedWindow.left + focusedWindow.width - width - 16));
-    createOptions.top = Math.round(Math.max(focusedWindow.top, focusedWindow.top + focusedWindow.height - height - 48));
+    createOptions.top = Math.round(Math.max(focusedWindow.top, focusedWindow.top + focusedWindow.height - height - 16));
   }
 
   return new Promise((resolve, reject) => {
@@ -98,7 +101,7 @@ function setTabBadge(tabId, hasSavedForm) {
   chrome.action.setBadgeText({ text: hasSavedForm ? "1" : "", tabId });
   chrome.action.setTitle({
     tabId,
-    title: hasSavedForm ? "FormScript: ha formulario salvo para este site" : "FormScript"
+    title: hasSavedForm ? "FormScript: a saved form is available for this site" : "FormScript"
   });
 }
 
@@ -133,6 +136,7 @@ async function handleFormSubmitted(message, sender) {
   const fields = sanitizeFields(message.fields);
   if (fields.length === 0) return { ok: true, status: "empty" };
   const hasSavedRecord = Boolean(savedRecord);
+  // Ask for consent only when a submission differs from the stored values.
   const hasChangedValues = hasSavedRecord && JSON.stringify(savedRecord.fields) !== JSON.stringify(fields);
   if (hasSavedRecord && !hasChangedValues) return { ok: true, status: "unchanged" };
 
@@ -150,6 +154,7 @@ async function handleFormSubmitted(message, sender) {
     return { ok: true, status: hasSavedRecord ? "updated" : "saved" };
   }
 
+  // Keep unapproved values in session storage until the user makes a choice.
   await chrome.storage.session.set({
     [pendingKey]: {
       formKey: message.formKey,
@@ -226,6 +231,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .then(sendResponse)
     .catch(() => sendResponse({ ok: false, reason: "storage-error" }));
   return true;
+});
+
+// Rebuild the browser context menu when the extension is installed or updated.
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: FILL_CONTEXT_MENU_ID,
+      title: "Fill form with FormScript",
+      contexts: ["page", "editable"],
+      documentUrlPatterns: ["http://*/*", "https://*/*"]
+    });
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId !== FILL_CONTEXT_MENU_ID || !Number.isInteger(tab?.id)) return;
+
+  try {
+    void chrome.tabs.sendMessage(tab.id, {
+      type: "FORMSCRIPT_FILL_CONTEXT_FORM",
+      targetForm: info.editable === true
+    }).catch(() => {});
+  } catch {}
 });
 
 async function cleanupExpiredPendingForms() {

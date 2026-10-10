@@ -1,57 +1,58 @@
 # FormScript
 
-Extensao de navegador para Chrome e Brave, baseada no Manifest V3.
+A Manifest V3 browser extension for Chrome and Brave.
 
-## Estrutura
+## Project structure
 
 ```text
 formscript/
 |-- assets/
-|   `-- icons/          # Icones da extensao
+|   `-- icons/          # Extension icons
 |-- src/
-|   |-- background/     # Service worker e eventos do navegador
-|   |-- content/        # Scripts executados nas paginas
-|   |-- consent/        # Janela de confirmacao de salvamento
-|   |-- options/        # Pagina de configuracoes
-|   `-- popup/          # Interface do botao da extensao
-|-- manifest.json       # Metadados e configuracao da extensao
+|   |-- background/     # Service worker and browser events
+|   |-- content/        # Scripts injected into web pages
+|   |-- consent/        # Save confirmation window
+|   |-- options/        # Settings page
+|   `-- popup/          # Toolbar popup
+|-- manifest.json       # Extension metadata and configuration
 `-- README.md
 ```
 
-## Carregar para desenvolvimento
+## Load for development
 
-1. Abra `chrome://extensions` no Chrome ou `brave://extensions` no Brave.
-2. Ative o modo do desenvolvedor.
-3. Selecione **Carregar sem compactacao** e escolha a pasta raiz deste projeto.
+1. Open `chrome://extensions` in Chrome or `brave://extensions` in Brave.
+2. Enable Developer mode.
+3. Select **Load unpacked** and choose this project's root folder.
 
-## Testar a extensao
+## Test the extension
 
-Use o formulario de demonstracao do httpbin: [https://httpbin.org/forms/post](https://httpbin.org/forms/post).
+Use the httpbin demo form: [https://httpbin.org/forms/post](https://httpbin.org/forms/post).
 
-1. Abra a pagina em uma aba com o FormScript instalado e ativado.
-2. Preencha alguns campos com dados ficticios, como `Teste FormScript` e `teste@example.com`. Nao use senhas, dados reais ou informacoes pessoais.
-3. Envie o formulario. A janela central do FormScript deve perguntar se deseja salvar os campos compativeis.
-4. Selecione **Salvar**. O site exibira a resposta do envio.
-5. Abra novamente [https://httpbin.org/forms/post](https://httpbin.org/forms/post). O icone do FormScript deve mostrar o badge `1`.
-6. Clique no icone da extensao e selecione **Preencher formulario**. Os valores salvos devem aparecer; o formulario nao sera enviado automaticamente.
+1. Open the page in a tab with FormScript installed and enabled.
+2. Enter fictional values, such as `FormScript Test` and `test@example.com`. Do not use passwords, real data, or personal information.
+3. Submit the form. A compact FormScript window should appear at the bottom right and ask to save the supported fields.
+4. Select **OK**. The site will display the submission response.
+5. Reopen [https://httpbin.org/forms/post](https://httpbin.org/forms/post). The FormScript icon should show the `1` badge.
+6. Select the extension icon and choose **Fill form**. The saved values should appear; the form will not be submitted automatically.
 
-Se a pagina de teste nao abrir ou mudar seu formulario, confira tambem em `chrome://extensions` ou `brave://extensions` se a extensao esta ativa e sem erros.
+If the test page is unavailable or changes its form, check `chrome://extensions` or `brave://extensions` to make sure the extension is enabled and has no errors.
 
-## Funcionalidades
+## Features
 
-- Ao enviar um formulario, a extensao abre uma janela do FormScript no canto inferior direito. **OK** salva os dados; `Esc` descarta e fecha a janela.
-- Se um formulario ja salvo for enviado novamente com valores diferentes, a janela oferece atualizar o registro; `Esc` mantem os valores anteriores. Com **Perguntar antes de salvar** desativado, os novos valores substituem os anteriores automaticamente.
-- O botao da extensao preenche manualmente um formulario correspondente ao site atual. O preenchimento nao envia o formulario.
-- Quando a pagina atual tem um formulario correspondente ja salvo, o icone da extensao mostra o badge `1` naquela aba. A verificacao acontece ao carregar a pagina e ao voltar para a aba.
-- As configuracoes e os formularios aceitos ficam no armazenamento local do perfil do navegador (`chrome.storage.local`); nao sao enviados a um servidor.
-- Em **Configuracoes e backup**, e possivel baixar um backup JSON ou restaurar um arquivo FormScript. Restaurar substitui os formularios e configuracoes FormScript existentes neste navegador, apos confirmacao.
-- Em **Formularios armazenados**, e possivel excluir os dados de um site ou apagar todos os formularios salvos.
-- Desativar **Perguntar antes de salvar** salva automaticamente os formularios novos enviados.
+- Submitting a form opens a compact window at the bottom right. The message appears in the window title, and the button row slides in from the right. **OK** saves the data; **Cancel** or `Esc` discards the capture.
+- If a saved form is submitted again with different values, the window offers to update the record. `Esc` keeps the existing values. When **Ask before saving** is disabled, new values replace the previous ones automatically.
+- The toolbar popup fills a saved form that matches the current site. Filling never submits the form.
+- The browser context menu includes **Fill form with FormScript** on HTTP/HTTPS pages. Right-clicking a field targets its form; right-clicking elsewhere on the page searches for a saved form. Filling never submits the form.
+- When the current page contains a matching saved form, the extension icon shows a `1` badge for that tab. The check runs when the page loads, when the tab becomes visible, and when forms are added dynamically.
+- Settings and approved forms are stored in the browser profile's local storage (`chrome.storage.local`); they are not sent to a server.
+- **Settings and backups** lets you download a JSON backup or restore a FormScript backup. Restoring replaces the existing FormScript forms and settings in this browser after confirmation.
+- **Saved forms** lets you delete data for one site or remove all saved forms.
+- Disabling **Ask before saving** automatically saves newly submitted forms.
 
-## Privacidade e limites
+## Privacy and limitations
 
-- Campos de senha, nome de usuario, codigo de uso unico, dados de cartao e campos com autocomplete de credenciais/pagamento nao sao capturados nem preenchidos.
-- A captura ocorre no evento de envio da pagina. Sites que enviam formularios sem um evento `submit` padrao podem nao ser detectados.
-- O preenchimento usa o site (origem), caminho da acao e nomes/tipos dos campos para encontrar o formulario correspondente. Formularios que mudam dinamicamente podem nao corresponder ao salvo.
-- O arquivo de backup pode conter dados pessoais dos formularios. Proteja-o como protegeria esses dados.
-- O acesso a paginas e concedido pelo navegador para que o content script detecte envios e preencha formularios.
+- Passwords, usernames, one-time codes, payment-card data, and fields with credential or payment autocomplete are excluded from capture and filling.
+- Capture listens for the page's standard `submit` event. Sites that submit forms without that event may not be detected.
+- Form matching uses the site origin, action path, and field names/types. Forms that change dynamically may not match a saved record.
+- Backups may contain personal form data. Store backup files securely.
+- The browser grants the extension access to web pages so its content script can detect submissions and fill forms.

@@ -10,73 +10,37 @@
 }
 
 body {
-  min-width: 360px;
+  min-width: 260px;
   margin: 0;
+  overflow: hidden;
+  background: #f4f6f3;
 }
 
 main {
-  display: grid;
-  gap: 20px;
-  padding: 22px 24px 18px;
-}
-
-header {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #d7dfd8;
+  min-height: 48px;
+  padding: 2px 12px 10px;
+  animation: slide-in-from-right 240ms ease-out both;
 }
 
-header img {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-}
-
-header p {
-  margin: 0;
-  color: #176b56;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-h1 {
-  margin: 0 0 10px;
-  font-size: 20px;
-  line-height: 1.3;
-}
-
-section > p {
-  margin: 0;
-  color: #52625b;
-  font-size: 14px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-#status {
-  min-height: 18px;
-  margin: -10px 0;
-  color: #a32d2d;
-  font-size: 13px;
-}
-
-footer {
+.actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  padding-top: 8px;
+  width: 100%;
+  white-space: nowrap;
 }
 
 button {
-  min-width: 104px;
-  min-height: 40px;
-  padding: 0 14px;
+  min-width: 96px;
+  min-height: 32px;
+  padding: 0 12px;
   border: 0;
   border-radius: 5px;
+  color: #fff;
   font: inherit;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
 }
 
@@ -86,24 +50,52 @@ button:focus-visible {
 }
 
 .primary {
-  background: #176b56;
-  color: #fff;
+  background: #1769d2;
 }
 
 .primary:hover {
-  background: #105642;
+  background: #1158b5;
 }
 
-.secondary {
-  background: #e6ece7;
-  color: #24443a;
+.cancel {
+  background: #c63832;
 }
 
-.secondary:hover {
-  background: #d8e2da;
+.cancel:hover {
+  background: #a92d28;
 }
 
 button:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes slide-in-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main {
+    animation: none;
+  }
 }

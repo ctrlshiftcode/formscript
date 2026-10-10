@@ -1,25 +1,18 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Salvar formulario - FormScript</title>
+    <title>Save form - FormScript</title>
     <link rel="stylesheet" href="consent.css">
   </head>
   <body>
-    <main>
-      <header>
-        <img src="../../assets/icons/favico.png" alt="">
-        <p>FORMSCRIPT</p>
-      </header>
-      <section aria-labelledby="consent-title">
-        <h1 id="consent-title">Salvar os dados deste formulario?</h1>
-        <p id="consent-details"></p>
-      </section>
-      <p id="status" role="status" aria-live="polite"></p>
-      <footer>
+    <main aria-label="Confirm form storage">
+      <div class="actions">
         <button id="confirm" class="primary" type="button">OK</button>
-      </footer>
+        <button id="cancel" class="cancel" type="button">Cancelar</button>
+      </div>
+      <p id="status" class="visually-hidden" role="status" aria-live="polite"></p>
     </main>
     <script src="consent.js"></script>
   </body>

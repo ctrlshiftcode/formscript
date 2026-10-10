@@ -15,7 +15,9 @@ const EXCLUDED_INPUT_TYPES = new Set([
   "reset",
   "submit"
 ]);
+let contextMenuForm = null;
 
+// Exclude credentials, payment data, and controls that cannot be safely replayed.
 function isEligibleControl(control) {
   if (!control.name || control.disabled || control.readOnly) return false;
   if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement)) {
@@ -44,6 +46,7 @@ function getFormKey(form, controls) {
     actionPath = location.pathname;
   }
 
+  // Match forms by structure so changing field values does not create a new record.
   const signature = JSON.stringify({
     actionPath,
     controls: controls.map((control) => ({
@@ -92,6 +95,7 @@ function snapshotFields(controls) {
   });
 }
 
+// Capture values before the page navigates away after a standard form submission.
 async function captureForm(form) {
   const controls = getEligibleControls(form);
   const fields = snapshotFields(controls);
@@ -109,6 +113,7 @@ async function captureForm(form) {
   }
 }
 
+// Use native setters and input events so framework-controlled fields observe updates.
 function setControlValue(control, value) {
   const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(control), "value");
   if (descriptor?.set) descriptor.set.call(control, value);
@@ -176,8 +181,30 @@ async function fillForm(form) {
   return { status: "filled", count };
 }
 
+async function fillFirstSavedForm() {
+  for (const candidate of document.forms) {
+    if (getEligibleControls(candidate).length === 0) continue;
+    const result = await fillForm(candidate);
+    if (result.status !== "not-found") return result;
+  }
+  return { status: "not-found", count: 0 };
+}
+
 document.addEventListener("submit", (event) => {
   if (event.target instanceof HTMLFormElement) void captureForm(event.target);
+}, true);
+// Remember the form under the pointer so a context-menu action targets that form.
+document.addEventListener("contextmenu", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    contextMenuForm = null;
+    return;
+  }
+
+  const control = target.closest("input, select, textarea");
+  contextMenuForm = control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement
+    ? control.form
+    : target.closest("form");
 }, true);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) checkForSavedForms();
@@ -192,14 +219,19 @@ formObserver.observe(document.documentElement, { childList: true, subtree: true 
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "FORMSCRIPT_FILL_ACTIVE_FORM") {
-    (async () => {
-      for (const candidate of document.forms) {
-        if (getEligibleControls(candidate).length === 0) continue;
-        const result = await fillForm(candidate);
-        if (result.status !== "not-found") return result;
-      }
-      return { status: "not-found", count: 0 };
-    })()
+    fillFirstSavedForm()
+      .then(sendResponse)
+      .catch(() => sendResponse({ status: "error", count: 0 }));
+    return true;
+  }
+
+  if (message?.type === "FORMSCRIPT_FILL_CONTEXT_FORM") {
+    const form = message.targetForm && contextMenuForm && document.contains(contextMenuForm)
+      ? contextMenuForm
+      : null;
+    const operation = form ? fillForm(form) : fillFirstSavedForm();
+
+    operation
       .then(sendResponse)
       .catch(() => sendResponse({ status: "error", count: 0 }));
     return true;

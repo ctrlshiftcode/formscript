@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "FormScript",
   "version": "0.1.0",
-  "description": "Extensao FormScript para Chrome e Brave.",
+  "description": "FormScript browser extension for Chrome and Brave.",
   "minimum_chrome_version": "102",
   "permissions": ["activeTab", "contextMenus", "storage"],
   "background": {

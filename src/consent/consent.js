@@ -1,21 +1,19 @@
 const parameters = new URLSearchParams(location.search);
 const consentId = parameters.get("id") || "";
-const site = parameters.get("site") || "este site";
-const fieldCount = Number(parameters.get("count")) || 0;
+const site = parameters.get("site") || "this site";
 const isUpdate = parameters.get("mode") === "update";
 const confirmButton = document.getElementById("confirm");
-const title = document.getElementById("consent-title");
-const details = document.getElementById("consent-details");
+const cancelButton = document.getElementById("cancel");
 const statusText = document.getElementById("status");
 
-title.textContent = isUpdate ? "Atualizar os dados salvos deste formulario?" : "Salvar os dados deste formulario?";
-details.textContent = isUpdate
-  ? `${site} enviou novos valores para ${fieldCount} campos compativeis. OK substitui os dados anteriores; Esc mantem o registro atual.`
-  : `${site} enviou um formulario com ${fieldCount} campos compativeis. Os dados ficam somente neste navegador.`;
+document.title = isUpdate
+  ? `Update saved form data for ${site}?`
+  : `Save form data for ${site}?`;
 
+// Keep the existing record unchanged when the user cancels or presses Escape.
 async function decide(decision) {
   confirmButton.disabled = true;
-  statusText.textContent = "";
+  cancelButton.disabled = true;
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -23,15 +21,19 @@ async function decide(decision) {
       consentId,
       decision
     });
-    if (!response?.ok) throw new Error("Esta confirmacao expirou. Envie o formulario novamente.");
+    if (!response?.ok) throw new Error("This confirmation expired. Submit the form again.");
     window.close();
   } catch (error) {
-    statusText.textContent = error.message || "Nao foi possivel salvar a escolha.";
+    const errorMessage = error.message || "Could not save your choice.";
+    document.title = errorMessage;
+    statusText.textContent = errorMessage;
     confirmButton.disabled = false;
+    cancelButton.disabled = false;
   }
 }
 
 confirmButton.addEventListener("click", () => void decide("save"));
+cancelButton.addEventListener("click", () => void decide("discard"));
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
@@ -41,5 +43,6 @@ window.addEventListener("keydown", (event) => {
 
 if (!/^formscript-[a-f0-9]+$/.test(consentId)) {
   confirmButton.disabled = true;
-  statusText.textContent = "Confirmacao invalida.";
+  cancelButton.disabled = true;
+  document.title = "Invalid confirmation";
 }
