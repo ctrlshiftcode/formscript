@@ -16,6 +16,9 @@ const EXCLUDED_INPUT_TYPES = new Set([
   "submit"
 ]);
 let contextMenuForm = null;
+const formFillWidgets = new Map();
+let formFillHost = null;
+let formFillRoot = null;
 
 // Exclude credentials, payment data, and controls that cannot be safely replayed.
 function isEligibleControl(control) {
@@ -59,17 +62,160 @@ function getFormKey(form, controls) {
   return `${FORM_PREFIX}${location.origin}:${encodeURIComponent(signature)}`;
 }
 
-function checkForSavedForms() {
-  const formKeys = [...new Set(Array.from(document.forms, (form) => {
+function getEligibleFormEntries() {
+  return Array.from(document.forms).flatMap((form) => {
     const controls = getEligibleControls(form);
-    return controls.length > 0 ? getFormKey(form, controls) : null;
-  }).filter(Boolean))];
+    if (controls.length === 0) return [];
+
+    return [{
+      form,
+      control: controls[0],
+      formKey: getFormKey(form, controls)
+    }];
+  });
+}
+
+// Keep fill controls in a shadow root so page styles cannot affect their appearance.
+function ensureFormFillRoot() {
+  if (formFillHost?.isConnected) return formFillRoot;
+
+  formFillHost = document.createElement("div");
+  formFillHost.dataset.formscriptFillUi = "true";
+  formFillHost.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none";
+  formFillRoot = formFillHost.attachShadow({ mode: "open" });
+
+  const style = document.createElement("style");
+  style.textContent = `
+    button {
+      all: initial;
+      position: fixed;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      width: 30px;
+      height: 24px;
+      border: 1px solid #ffffff;
+      border-radius: 6px;
+      background: #176b56;
+      box-shadow: 0 2px 8px rgb(0 0 0 / 24%);
+      color: #ffffff;
+      font: 700 14px/1 "Segoe UI", sans-serif;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    button:hover { background: #105642; }
+    button:focus-visible { outline: 3px solid #e19a42; outline-offset: 2px; }
+    button:disabled { cursor: wait; opacity: 0.65; }
+    button[hidden] { display: none !important; }
+  `;
+  formFillRoot.append(style);
+  document.documentElement.append(formFillHost);
+  return formFillRoot;
+}
+
+function positionFormFillWidgets() {
+  for (const [form, widget] of formFillWidgets) {
+    if (!form.isConnected || !widget.control.isConnected) {
+      widget.button.remove();
+      formFillWidgets.delete(form);
+      continue;
+    }
+
+    const rect = widget.control.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      widget.button.hidden = true;
+      continue;
+    }
+
+    const left = Math.max(4, Math.min(rect.right + 8, window.innerWidth - 34));
+    const top = Math.max(4, Math.min(rect.top + (rect.height - 24) / 2, window.innerHeight - 28));
+    widget.button.style.left = `${left}px`;
+    widget.button.style.top = `${top}px`;
+    widget.button.hidden = false;
+  }
+}
+
+function createFormFillButton(form) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "F";
+  button.title = "Fill this form with FormScript";
+  button.setAttribute("aria-label", "Fill this form with FormScript");
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const widget = formFillWidgets.get(form);
+    if (!widget) return;
+    button.disabled = true;
+
+    try {
+      const result = await fillForm(form);
+      button.title = result.status === "filled"
+        ? `Filled ${result.count} fields`
+        : "No saved data matches this form";
+    } catch {
+      button.title = "Could not fill this form";
+    } finally {
+      button.disabled = false;
+      window.setTimeout(() => {
+        if (button.isConnected) button.title = "Fill this form with FormScript";
+      }, 1800);
+    }
+  });
+  return button;
+}
+
+// Show an icon only for forms with a matching saved record.
+function syncFormFillWidgets(entries, savedFormKeys) {
+  const savedKeys = new Set(savedFormKeys);
+  const matchingEntries = entries.filter((entry) => savedKeys.has(entry.formKey));
+
+  for (const [form, widget] of formFillWidgets) {
+    if (!matchingEntries.some((entry) => entry.form === form)) {
+      widget.button.remove();
+      formFillWidgets.delete(form);
+    }
+  }
+
+  if (matchingEntries.length === 0) {
+    formFillHost?.remove();
+    formFillHost = null;
+    formFillRoot = null;
+    return;
+  }
+
+  const root = ensureFormFillRoot();
+  for (const entry of matchingEntries) {
+    let widget = formFillWidgets.get(entry.form);
+    if (!widget) {
+      widget = {
+        button: createFormFillButton(entry.form),
+        control: entry.control
+      };
+      formFillWidgets.set(entry.form, widget);
+    } else {
+      widget.control = entry.control;
+    }
+
+    if (widget.button.parentNode !== root) root.append(widget.button);
+  }
+
+  positionFormFillWidgets();
+}
+
+function checkForSavedForms() {
+  const entries = getEligibleFormEntries();
+  const formKeys = [...new Set(entries.map((entry) => entry.formKey))];
 
   try {
     void chrome.runtime.sendMessage({
       type: "FORMSCRIPT_CHECK_SAVED_FORMS",
       origin: location.origin,
       formKeys
+    }).then((response) => {
+      if (response?.ok) syncFormFillWidgets(entries, response.savedFormKeys || []);
     }).catch(() => {});
   } catch {}
 }
@@ -209,6 +355,8 @@ document.addEventListener("contextmenu", (event) => {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) checkForSavedForms();
 });
+window.addEventListener("scroll", positionFormFillWidgets, true);
+window.addEventListener("resize", positionFormFillWidgets);
 
 let badgeCheckTimer;
 const formObserver = new MutationObserver(() => {

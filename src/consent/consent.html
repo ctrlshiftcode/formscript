@@ -3,16 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Save form - FormScript</title>
+    <title>FormScript consent</title>
     <link rel="stylesheet" href="consent.css">
   </head>
   <body>
-    <main aria-label="Confirm form storage">
+    <main>
       <div class="actions">
         <button id="confirm" class="primary" type="button">OK</button>
-        <button id="cancel" class="cancel" type="button">Cancelar</button>
+        <button id="cancel" class="cancel" type="button">Cancel</button>
+        <span id="countdown" class="countdown" aria-live="off">10s</span>
       </div>
-      <p id="status" class="visually-hidden" role="status" aria-live="polite"></p>
+      <span class="arrival-indicator" aria-hidden="true"></span>
     </main>
     <script src="consent.js"></script>
   </body>

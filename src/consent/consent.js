@@ -1,17 +1,23 @@
 const parameters = new URLSearchParams(location.search);
 const consentId = parameters.get("id") || "";
-const site = parameters.get("site") || "this site";
 const isUpdate = parameters.get("mode") === "update";
+const countdownStart = 10;
+const countdownLabel = document.getElementById("countdown");
 const confirmButton = document.getElementById("confirm");
 const cancelButton = document.getElementById("cancel");
-const statusText = document.getElementById("status");
+let secondsRemaining = countdownStart;
+let decisionSent = false;
+let countdownTimer;
 
-document.title = isUpdate
-  ? `Update saved form data for ${site}?`
-  : `Save form data for ${site}?`;
+function updateTitle() {
+  document.title = isUpdate ? "Update form?" : "Save form?";
+  countdownLabel.textContent = `${secondsRemaining}s`;
+}
 
-// Keep the existing record unchanged when the user cancels or presses Escape.
 async function decide(decision) {
+  if (decisionSent) return;
+  decisionSent = true;
+  clearInterval(countdownTimer);
   confirmButton.disabled = true;
   cancelButton.disabled = true;
 
@@ -24,9 +30,13 @@ async function decide(decision) {
     if (!response?.ok) throw new Error("This confirmation expired. Submit the form again.");
     window.close();
   } catch (error) {
-    const errorMessage = error.message || "Could not save your choice.";
-    document.title = errorMessage;
-    statusText.textContent = errorMessage;
+    if (decision === "discard") {
+      window.close();
+      return;
+    }
+
+    decisionSent = false;
+    document.title = error.message || "Could not save this form";
     confirmButton.disabled = false;
     cancelButton.disabled = false;
   }
@@ -42,7 +52,16 @@ window.addEventListener("keydown", (event) => {
 });
 
 if (!/^formscript-[a-f0-9]+$/.test(consentId)) {
-  confirmButton.disabled = true;
-  cancelButton.disabled = true;
   document.title = "Invalid confirmation";
+  window.close();
+} else {
+  updateTitle();
+  countdownTimer = setInterval(() => {
+    secondsRemaining -= 1;
+    if (secondsRemaining <= 0) {
+      void decide("discard");
+      return;
+    }
+    updateTitle();
+  }, 1000);
 }

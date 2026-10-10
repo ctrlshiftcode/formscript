@@ -30,8 +30,8 @@ Use the httpbin demo form: [https://httpbin.org/forms/post](https://httpbin.org/
 
 1. Open the page in a tab with FormScript installed and enabled.
 2. Enter fictional values, such as `FormScript Test` and `test@example.com`. Do not use passwords, real data, or personal information.
-3. Submit the form. A compact FormScript window should appear at the bottom right and ask to save the supported fields.
-4. Select **OK**. The site will display the submission response.
+3. Submit the form. A compact FormScript window should appear at the bottom right with **OK** and **Cancel** buttons and a countdown to their right.
+4. Select **OK** to save the supported fields. **Cancel**, `Esc`, closing the window, or waiting ten seconds cancels the capture. The site will display the submission response.
 5. Reopen [https://httpbin.org/forms/post](https://httpbin.org/forms/post). The FormScript icon should show the `1` badge.
 6. Select the extension icon and choose **Fill form**. The saved values should appear; the form will not be submitted automatically.
 
@@ -39,10 +39,10 @@ If the test page is unavailable or changes its form, check `chrome://extensions`
 
 ## Features
 
-- Submitting a form opens a compact window at the bottom right. The message appears in the window title, and the button row slides in from the right. **OK** saves the data; **Cancel** or `Esc` discards the capture.
-- If a saved form is submitted again with different values, the window offers to update the record. `Esc` keeps the existing values. When **Ask before saving** is disabled, new values replace the previous ones automatically.
-- The toolbar popup fills a saved form that matches the current site. Filling never submits the form.
-- The browser context menu includes **Fill form with FormScript** on HTTP/HTTPS pages. Right-clicking a field targets its form; right-clicking elsewhere on the page searches for a saved form. Filling never submits the form.
+- Submitting a form opens a compact window at the bottom right. Its title describes the save action, and a 10-second countdown appears to the right of the buttons. **OK** saves; **Cancel**, `Esc`, closing the window, or letting the timer expire cancels the capture.
+- If a saved form is submitted again with different values, the window offers to update the record. Canceling keeps the existing values. When **Ask before saving** is disabled, new values replace the previous ones automatically.
+- A small green **F** button appears beside the first supported field of each saved form that matches the page. Clicking it fills that form directly. The toolbar popup and browser context-menu fill actions remain available; filling never submits the form.
+- The browser context menu has a **FormScript** submenu on HTTP/HTTPS pages. **Fill form** targets the form under a right-clicked field, or searches the page when opened elsewhere. **Clear saved form data for this site** removes saved forms for the current origin. Filling never submits the form.
 - When the current page contains a matching saved form, the extension icon shows a `1` badge for that tab. The check runs when the page loads, when the tab becomes visible, and when forms are added dynamically.
 - Settings and approved forms are stored in the browser profile's local storage (`chrome.storage.local`); they are not sent to a server.
 - **Settings and backups** lets you download a JSON backup or restore a FormScript backup. Restoring replaces the existing FormScript forms and settings in this browser after confirmation.

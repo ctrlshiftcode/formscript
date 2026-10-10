@@ -2,7 +2,10 @@ const FORM_PREFIX = "formscript:form:";
 const SETTINGS_KEY = "formscript:settings";
 const PENDING_PREFIX = "pending:";
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+const CONTEXT_MENU_ID = "formscript-menu";
 const FILL_CONTEXT_MENU_ID = "formscript-fill-form";
+const CLEAR_CONTEXT_MENU_ID = "formscript-clear-site-data";
+const consentWindowIds = new Map();
 
 function consentIdFor(formKey) {
   let hash = 2166136261;
@@ -89,7 +92,10 @@ async function openConsentWindow(consentId, origin, fieldCount, isUpdate) {
     chrome.windows.create(createOptions, (createdWindow) => {
       const error = chrome.runtime.lastError;
       if (error) reject(new Error(error.message));
-      else resolve(createdWindow);
+      else {
+        consentWindowIds.set(createdWindow.id, consentId);
+        resolve(createdWindow);
+      }
     });
   });
 }
@@ -115,10 +121,11 @@ async function handleSavedFormCheck(message, sender) {
     .filter((key) => typeof key === "string" && key.startsWith(originPrefix))
     .slice(0, 100);
   const stored = formKeys.length > 0 ? await chrome.storage.local.get(formKeys) : {};
-  const hasSavedForm = formKeys.some((key) => Boolean(stored[key]));
+  const savedFormKeys = formKeys.filter((key) => Boolean(stored[key]));
+  const hasSavedForm = savedFormKeys.length > 0;
 
   setTabBadge(sender.tab.id, hasSavedForm);
-  return { ok: true, hasSavedForm };
+  return { ok: true, hasSavedForm, savedFormKeys };
 }
 
 async function handleFormSubmitted(message, sender) {
@@ -166,7 +173,13 @@ async function handleFormSubmitted(message, sender) {
   });
 
   try {
-    await openConsentWindow(consentId, message.origin, fields.length, hasSavedRecord);
+    const consentWindow = await openConsentWindow(consentId, message.origin, fields.length, hasSavedRecord);
+    const { [pendingKey]: pending } = await chrome.storage.session.get(pendingKey);
+    if (pending) {
+      await chrome.storage.session.set({
+        [pendingKey]: { ...pending, windowId: consentWindow.id }
+      });
+    }
   } catch (error) {
     await chrome.storage.session.remove(pendingKey);
     return { ok: false, reason: error.message };
@@ -233,20 +246,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-// Rebuild the browser context menu when the extension is installed or updated.
+// Rebuild the browser context-menu submenu when the extension is installed or updated.
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
-      id: FILL_CONTEXT_MENU_ID,
-      title: "Fill form with FormScript",
+      id: CONTEXT_MENU_ID,
+      title: "FormScript",
       contexts: ["page", "editable"],
       documentUrlPatterns: ["http://*/*", "https://*/*"]
+    });
+    chrome.contextMenus.create({
+      id: FILL_CONTEXT_MENU_ID,
+      parentId: CONTEXT_MENU_ID,
+      title: "Fill form",
+      contexts: ["page", "editable"]
+    });
+    chrome.contextMenus.create({
+      id: CLEAR_CONTEXT_MENU_ID,
+      parentId: CONTEXT_MENU_ID,
+      title: "Clear saved form data for this site",
+      contexts: ["page", "editable"]
     });
   });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== FILL_CONTEXT_MENU_ID || !Number.isInteger(tab?.id)) return;
+  if (!Number.isInteger(tab?.id)) return;
+
+  if (info.menuItemId === CLEAR_CONTEXT_MENU_ID) {
+    void clearSavedFormsForSite(info.pageUrl || tab.url, tab.id).catch(() => {});
+    return;
+  }
+  if (info.menuItemId !== FILL_CONTEXT_MENU_ID) return;
 
   try {
     void chrome.tabs.sendMessage(tab.id, {
@@ -254,6 +285,50 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       targetForm: info.editable === true
     }).catch(() => {});
   } catch {}
+});
+
+// Remove only records whose origin exactly matches the page where the menu was opened.
+async function clearSavedFormsForSite(pageUrl, tabId) {
+  let origin;
+  try {
+    const url = new URL(pageUrl);
+    if (!/^https?:$/.test(url.protocol)) return;
+    origin = url.origin;
+  } catch {
+    return;
+  }
+
+  const originPrefix = `${FORM_PREFIX}${origin}:`;
+  const stored = await chrome.storage.local.get(null);
+  const keys = Object.keys(stored).filter((key) => key.startsWith(originPrefix));
+  if (keys.length > 0) await chrome.storage.local.remove(keys);
+  setTabBadge(tabId, false);
+}
+
+async function discardConsentOnWindowClose(windowId) {
+  const consentId = consentWindowIds.get(windowId);
+  consentWindowIds.delete(windowId);
+
+  let pendingKey = consentId ? `${PENDING_PREFIX}${consentId}` : null;
+  let pending;
+  if (pendingKey) {
+    const stored = await chrome.storage.session.get(pendingKey);
+    pending = stored[pendingKey];
+  }
+
+  if (!pending) {
+    const sessionEntries = await chrome.storage.session.get(null);
+    const match = Object.entries(sessionEntries).find(([key, value]) => (
+      key.startsWith(PENDING_PREFIX) && value?.windowId === windowId
+    ));
+    if (match) [pendingKey, pending] = match;
+  }
+
+  if (pending && pendingKey) await chrome.storage.session.remove(pendingKey);
+}
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  void discardConsentOnWindowClose(windowId).catch(() => {});
 });
 
 async function cleanupExpiredPendingForms() {
