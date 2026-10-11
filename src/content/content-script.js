@@ -15,10 +15,315 @@ const EXCLUDED_INPUT_TYPES = new Set([
   "reset",
   "submit"
 ]);
+const TEXT_FIELD_TYPES = new Set(["text", "search", "email", "tel", "url"]);
 let contextMenuForm = null;
+let lastContextMenuTarget = null;
 const formFillWidgets = new Map();
 let formFillHost = null;
 let formFillRoot = null;
+
+function isEditableTextField(control) {
+  if (!control || !(control instanceof Element)) return false;
+  if (control instanceof HTMLTextAreaElement) {
+    return !control.disabled && !control.readOnly;
+  }
+  if (control instanceof HTMLInputElement) {
+    const type = (control.type || "text").toLowerCase();
+    const disallowedTypes = new Set([
+      "checkbox",
+      "radio",
+      "button",
+      "submit",
+      "reset",
+      "image",
+      "file",
+      "hidden",
+      "color",
+      "range"
+    ]);
+    return !disallowedTypes.has(type) && !control.disabled && !control.readOnly;
+  }
+  if (control.isContentEditable) return true;
+  return false;
+}
+
+// Generate 11 valid CPF digits using the standard Brazilian checksum algorithm (Modulo 11).
+function generateCpfDigits() {
+  const digits = [];
+  let allEqual = true;
+  for (let index = 0; index < 9; index += 1) {
+    const digit = Math.floor(Math.random() * 10);
+    digits.push(digit);
+    if (index > 0 && digit !== digits[0]) allEqual = false;
+  }
+  // Ensure the 9 initial base digits are not all identical (invalid in CPF rules).
+  if (allEqual) {
+    digits[8] = (digits[8] + 1) % 10;
+  }
+
+  // Calculate first verification digit using weights 10 down to 2.
+  let sum1 = 0;
+  for (let index = 0; index < 9; index += 1) {
+    sum1 += digits[index] * (10 - index);
+  }
+  const remainder1 = sum1 % 11;
+  const digit10 = remainder1 < 2 ? 0 : 11 - remainder1;
+  digits.push(digit10);
+
+  // Calculate second verification digit using weights 11 down to 2.
+  let sum2 = 0;
+  for (let index = 0; index < 10; index += 1) {
+    sum2 += digits[index] * (11 - index);
+  }
+  const remainder2 = sum2 % 11;
+  const digit11 = remainder2 < 2 ? 0 : 11 - remainder2;
+  digits.push(digit11);
+
+  return digits;
+}
+
+// Return formatted CPF string: XXX.XXX.XXX-XX.
+function generateFormattedCpf() {
+  const digits = generateCpfDigits();
+  return `${digits[0]}${digits[1]}${digits[2]}.${digits[3]}${digits[4]}${digits[5]}.${digits[6]}${digits[7]}${digits[8]}-${digits[9]}${digits[10]}`;
+}
+
+// Return unformatted CPF string: XXXXXXXXXXX.
+function generateUnformattedCpf() {
+  return generateCpfDigits().join("");
+}
+
+// Generate 14 valid CNPJ digits using Modulo 11 with cyclical weights.
+function generateCnpjDigits() {
+  const digits = [];
+  let allEqual = true;
+  for (let index = 0; index < 8; index += 1) {
+    const digit = Math.floor(Math.random() * 10);
+    digits.push(digit);
+    if (index > 0 && digit !== digits[0]) allEqual = false;
+  }
+  if (allEqual) {
+    digits[7] = (digits[7] + 1) % 10;
+  }
+  digits.push(0, 0, 0, 1);
+
+  const weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  let sum1 = 0;
+  for (let index = 0; index < 12; index += 1) {
+    sum1 += digits[index] * weights1[index];
+  }
+  const remainder1 = sum1 % 11;
+  const digit13 = remainder1 < 2 ? 0 : 11 - remainder1;
+  digits.push(digit13);
+
+  const weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  let sum2 = 0;
+  for (let index = 0; index < 13; index += 1) {
+    sum2 += digits[index] * weights2[index];
+  }
+  const remainder2 = sum2 % 11;
+  const digit14 = remainder2 < 2 ? 0 : 11 - remainder2;
+  digits.push(digit14);
+
+  return digits;
+}
+
+// Format CNPJ with mask: XX.XXX.XXX/XXXX-XX.
+function generateFormattedCnpj() {
+  const digits = generateCnpjDigits();
+  return `${digits[0]}${digits[1]}.${digits[2]}${digits[3]}${digits[4]}.${digits[5]}${digits[6]}${digits[7]}/${digits[8]}${digits[9]}${digits[10]}${digits[11]}-${digits[12]}${digits[13]}`;
+}
+
+// Return unformatted CNPJ string: XXXXXXXXXXXXXX.
+function generateUnformattedCnpj() {
+  return generateCnpjDigits().join("");
+}
+
+// Generate 9 RG digits using SSP weights (2 through 9).
+// Regenerate if remainder equals 10 to guarantee a purely numeric digit.
+function generateRgDigits() {
+  while (true) {
+    const digits = [];
+    for (let index = 0; index < 8; index += 1) {
+      digits.push(Math.floor(Math.random() * 10));
+    }
+    let sum = 0;
+    for (let index = 0; index < 8; index += 1) {
+      sum += digits[index] * (index + 2);
+    }
+    const remainder = sum % 11;
+    let checkDigit = 11 - remainder;
+    if (checkDigit === 11) checkDigit = 0;
+    if (checkDigit === 10) continue;
+    digits.push(checkDigit);
+    return digits;
+  }
+}
+
+// Format RG with standard mask: XX.XXX.XXX-X.
+function generateFormattedRg() {
+  const digits = generateRgDigits();
+  return `${digits[0]}${digits[1]}.${digits[2]}${digits[3]}${digits[4]}.${digits[5]}${digits[6]}${digits[7]}-${digits[8]}`;
+}
+
+// Return unformatted 9-digit RG string: XXXXXXXXX.
+function generateUnformattedRg() {
+  return generateRgDigits().join("");
+}
+
+// Valid Brazilian area codes (DDDs).
+const BRAZIL_DDDS = [
+  "11", "12", "13", "14", "15", "16", "17", "18", "19",
+  "21", "22", "24", "27", "28", "31", "32", "33", "34",
+  "35", "37", "38", "41", "42", "43", "44", "45", "46",
+  "47", "48", "49", "51", "53", "54", "55", "61", "62",
+  "64", "65", "66", "67", "68", "69", "71", "73", "74",
+  "75", "77", "79", "81", "82", "83", "84", "85", "86",
+  "87", "88", "89", "91", "92", "93", "94", "95", "96",
+  "97", "98", "99"
+];
+
+// Generate an 11-digit Brazilian mobile number (DDD + 9XXXX-XXXX).
+function generateRandomCellPhoneDigits() {
+  const ddd = BRAZIL_DDDS[Math.floor(Math.random() * BRAZIL_DDDS.length)];
+  const first = Math.floor(Math.random() * 4) + 6;
+  let rest = "";
+  for (let index = 0; index < 7; index += 1) {
+    rest += Math.floor(Math.random() * 10);
+  }
+  return { ddd, number: `9${first}${rest}` };
+}
+
+// Format mobile phone with mask: (XX) 9XXXX-XXXX.
+function generateFormattedCellPhone() {
+  const { ddd, number } = generateRandomCellPhoneDigits();
+  return `(${ddd}) ${number.slice(0, 5)}-${number.slice(5)}`;
+}
+
+// Return unformatted 11-digit mobile phone string: XX9XXXXXXXX.
+function generateUnformattedCellPhone() {
+  const { ddd, number } = generateRandomCellPhoneDigits();
+  return `${ddd}${number}`;
+}
+
+// Generate a 10-digit Brazilian landline number (DDD + [2-5]XXX-XXXX).
+function generateRandomLandlineDigits() {
+  const ddd = BRAZIL_DDDS[Math.floor(Math.random() * BRAZIL_DDDS.length)];
+  const first = Math.floor(Math.random() * 4) + 2;
+  let rest = "";
+  for (let index = 0; index < 7; index += 1) {
+    rest += Math.floor(Math.random() * 10);
+  }
+  return { ddd, number: `${first}${rest}` };
+}
+
+// Format landline phone with mask: (XX) XXXX-XXXX.
+function generateFormattedLandline() {
+  const { ddd, number } = generateRandomLandlineDigits();
+  return `(${ddd}) ${number.slice(0, 4)}-${number.slice(4)}`;
+}
+
+// Return unformatted 10-digit landline string: XXXXXXXXXX.
+function generateUnformattedLandline() {
+  const { ddd, number } = generateRandomLandlineDigits();
+  return `${ddd}${number}`;
+}
+
+// Lexical components for generating realistic Brazilian corporate names.
+const COMPANY_PREFIXES = [
+  "Alpha", "Beta", "Delta", "Omega", "Prime", "Nexus", "Atlas", "Horizonte",
+  "Vanguarda", "Inova", "Global", "Apex", "Omni", "Lumina", "Vertex",
+  "Orion", "Futura", "Avançar", "Solidez", "Virtus", "Pinnacle", "Quantum"
+];
+
+const COMPANY_MIDDLES = [
+  "Tecnologia", "Sistemas", "Logística", "Consultoria", "Serviços", "Engenharia",
+  "Comércio", "Empreendimentos", "Participações", "Soluções Digitais", "Alimentos",
+  "Transportes", "Segurança", "Comunicação", "Inovação", "Gestão", "Distribuição"
+];
+
+const COMPANY_SUFFIXES = [
+  "Ltda", "S.A.", "ME", "EPP", "Brasil Ltda", "Digital Ltda", "e Serviços Ltda"
+];
+
+// Generate a random company name combining brand prefix, industry segment, and legal type.
+function generateRandomCompanyName() {
+  const prefix = COMPANY_PREFIXES[Math.floor(Math.random() * COMPANY_PREFIXES.length)];
+  const middle = COMPANY_MIDDLES[Math.floor(Math.random() * COMPANY_MIDDLES.length)];
+  const suffix = COMPANY_SUFFIXES[Math.floor(Math.random() * COMPANY_SUFFIXES.length)];
+  return `${prefix} ${middle} ${suffix}`;
+}
+
+// Curated list of realistic Brazilian addresses and postal code prefixes.
+const ADDRESS_DATA = [
+  { street: "Av. Paulista", neighborhood: "Bela Vista", city: "São Paulo", uf: "SP", cep: "01311000" },
+  { street: "Rua Augusta", neighborhood: "Consolação", city: "São Paulo", uf: "SP", cep: "01305100" },
+  { street: "Rua Oscar Freire", neighborhood: "Cerqueira César", city: "São Paulo", uf: "SP", cep: "01426001" },
+  { street: "Av. Brigadeiro Faria Lima", neighborhood: "Itaim Bibi", city: "São Paulo", uf: "SP", cep: "04538133" },
+  { street: "Rua Domingos de Morais", neighborhood: "Vila Mariana", city: "São Paulo", uf: "SP", cep: "04010000" },
+  { street: "Av. Atlântica", neighborhood: "Copacabana", city: "Rio de Janeiro", uf: "RJ", cep: "22070000" },
+  { street: "Rua Visconde de Pirajá", neighborhood: "Ipanema", city: "Rio de Janeiro", uf: "RJ", cep: "22410003" },
+  { street: "Av. Rio Branco", neighborhood: "Centro", city: "Rio de Janeiro", uf: "RJ", cep: "20040002" },
+  { street: "Av. Afonso Pena", neighborhood: "Funcionários", city: "Belo Horizonte", uf: "MG", cep: "30130005" },
+  { street: "Rua da Bahia", neighborhood: "Lourdes", city: "Belo Horizonte", uf: "MG", cep: "30160011" },
+  { street: "Av. Sete de Setembro", neighborhood: "Batel", city: "Curitiba", uf: "PR", cep: "80230010" },
+  { street: "Rua XV de Novembro", neighborhood: "Centro", city: "Curitiba", uf: "PR", cep: "80020310" },
+  { street: "Av. Borges de Medeiros", neighborhood: "Praia de Belas", city: "Porto Alegre", uf: "RS", cep: "90110150" },
+  { street: "Av. Tancredo Neves", neighborhood: "Caminho das Árvores", city: "Salvador", uf: "BA", cep: "41820021" },
+  { street: "Av. Beira Mar", neighborhood: "Meireles", city: "Fortaleza", uf: "CE", cep: "60165121" },
+  { street: "Av. Boa Viagem", neighborhood: "Boa Viagem", city: "Recife", uf: "PE", cep: "51011060" },
+  { street: "Av. Beira Mar Norte", neighborhood: "Centro", city: "Florianópolis", uf: "SC", cep: "88015702" },
+  { street: "Setor Bancário Sul", neighborhood: "Asa Sul", city: "Brasília", uf: "DF", cep: "70070120" }
+];
+
+// Generate a realistic full Brazilian address: Street, Number - Neighborhood, City - UF.
+function generateRandomAddress() {
+  const item = ADDRESS_DATA[Math.floor(Math.random() * ADDRESS_DATA.length)];
+  const number = Math.floor(Math.random() * 2500) + 10;
+  return `${item.street}, ${number} - ${item.neighborhood}, ${item.city} - ${item.uf}`;
+}
+
+// Generate 8 CEP digits using a realistic regional prefix and randomized suffix.
+function generateCepDigits() {
+  const item = ADDRESS_DATA[Math.floor(Math.random() * ADDRESS_DATA.length)];
+  const prefix = item.cep.slice(0, 5);
+  const suffix = String(Math.floor(Math.random() * 900 + 100));
+  return `${prefix}${suffix}`;
+}
+
+// Format postal code (CEP) with standard mask: XXXXX-XXX.
+function generateFormattedCep() {
+  const cep = generateCepDigits();
+  return `${cep.slice(0, 5)}-${cep.slice(5)}`;
+}
+
+// Return unformatted 8-digit postal code string: XXXXXXXX.
+function generateUnformattedCep() {
+  return generateCepDigits();
+}
+
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.cssText = "position:fixed;opacity:0;pointer-events:none;left:-9999px";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const successful = document.execCommand("copy");
+    textarea.remove();
+    return successful;
+  } catch {
+    return false;
+  }
+}
 
 // Exclude credentials, payment data, and controls that cannot be safely replayed.
 function isEligibleControl(control) {
@@ -39,6 +344,12 @@ function isEligibleControl(control) {
 
 function getEligibleControls(form) {
   return Array.from(form.elements).filter(isEligibleControl);
+}
+
+function isTextField(control) {
+  return control instanceof HTMLTextAreaElement || (
+    control instanceof HTMLInputElement && TEXT_FIELD_TYPES.has(control.type.toLowerCase())
+  );
 }
 
 function getFormKey(form, controls) {
@@ -65,11 +376,12 @@ function getFormKey(form, controls) {
 function getEligibleFormEntries() {
   return Array.from(document.forms).flatMap((form) => {
     const controls = getEligibleControls(form);
-    if (controls.length === 0) return [];
+    const control = controls.find(isTextField);
+    if (!control) return [];
 
     return [{
       form,
-      control: controls[0],
+      control,
       formKey: getFormKey(form, controls)
     }];
   });
@@ -93,14 +405,16 @@ function ensureFormFillRoot() {
       align-items: center;
       justify-content: center;
       box-sizing: border-box;
-      width: 30px;
+      width: 24px;
       height: 24px;
+      padding: 0;
       border: 1px solid #ffffff;
       border-radius: 6px;
       background: #176b56;
       box-shadow: 0 2px 8px rgb(0 0 0 / 24%);
       color: #ffffff;
-      font: 700 14px/1 "Segoe UI", sans-serif;
+      font: 700 12px/1 "Segoe UI", sans-serif;
+      text-align: center;
       cursor: pointer;
       pointer-events: auto;
     }
@@ -123,13 +437,32 @@ function positionFormFillWidgets() {
     }
 
     const rect = widget.control.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
+    const inset = 5;
+    const buttonSize = Math.min(
+      24,
+      Math.floor(rect.width - inset * 2),
+      Math.floor(rect.height - 2)
+    );
+    if (buttonSize < 12) {
       widget.button.hidden = true;
       continue;
     }
 
-    const left = Math.max(4, Math.min(rect.right + 8, window.innerWidth - 34));
-    const top = Math.max(4, Math.min(rect.top + (rect.height - 24) / 2, window.innerHeight - 28));
+    const left = rect.right - buttonSize - inset;
+    const top = rect.top + (rect.height - buttonSize) / 2;
+    if (
+      left < 0 ||
+      top < 0 ||
+      left + buttonSize > window.innerWidth ||
+      top + buttonSize > window.innerHeight
+    ) {
+      widget.button.hidden = true;
+      continue;
+    }
+
+    widget.button.style.width = `${buttonSize}px`;
+    widget.button.style.height = `${buttonSize}px`;
+    widget.button.style.fontSize = `${Math.min(12, buttonSize * 0.6)}px`;
     widget.button.style.left = `${left}px`;
     widget.button.style.top = `${top}px`;
     widget.button.hidden = false;
@@ -339,13 +672,21 @@ async function fillFirstSavedForm() {
 document.addEventListener("submit", (event) => {
   if (event.target instanceof HTMLFormElement) void captureForm(event.target);
 }, true);
-// Remember the form under the pointer so a context-menu action targets that form.
+// Remember the form and textfield under the pointer so context-menu actions target them.
 document.addEventListener("contextmenu", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) {
     contextMenuForm = null;
+    lastContextMenuTarget = null;
     return;
   }
+
+  let editable = target.closest("input, textarea, [contenteditable='true'], [contenteditable='']");
+  if (!editable && target.closest("label")) {
+    const label = target.closest("label");
+    editable = label.control || label.querySelector("input, textarea");
+  }
+  lastContextMenuTarget = isEditableTextField(editable) ? editable : null;
 
   const control = target.closest("input, select, textarea");
   contextMenuForm = control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement
@@ -365,7 +706,72 @@ const formObserver = new MutationObserver(() => {
 });
 formObserver.observe(document.documentElement, { childList: true, subtree: true });
 
+// Insert text into target editable input or fall back to copying to system clipboard.
+// When filling inputs, uses control value setter and dispatches "input"/"change" events for React/Vue compatibility.
+function insertOrCopyText(value, sendResponse) {
+  const target = lastContextMenuTarget && document.contains(lastContextMenuTarget)
+    ? lastContextMenuTarget
+    : null;
+
+  if (target && isEditableTextField(target)) {
+    if (target.isContentEditable) {
+      target.textContent = value;
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    } else {
+      setControlValue(target, value);
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    target.focus();
+    sendResponse({ ok: true, target: "field", value });
+  } else {
+    copyToClipboard(value)
+      .then((copied) => sendResponse({ ok: copied, target: "clipboard", value }))
+      .catch(() => sendResponse({ ok: false, target: "clipboard", value }));
+    return true;
+  }
+  return false;
+}
+
+// Handle extension messages dispatched from service worker or popup.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "FORMSCRIPT_INSERT_DATA") {
+    const value = typeof message.text === "string" ? message.text : "";
+    return insertOrCopyText(value, sendResponse);
+  }
+  if (message?.type === "FORMSCRIPT_INSERT_CPF") {
+    const value = typeof message.cpf === "string" && message.cpf ? message.cpf : generateFormattedCpf();
+    return insertOrCopyText(value, sendResponse);
+  }
+  if (message?.type === "FORMSCRIPT_INSERT_CNPJ") {
+    const value = typeof message.cnpj === "string" && message.cnpj ? message.cnpj : generateFormattedCnpj();
+    return insertOrCopyText(value, sendResponse);
+  }
+  if (message?.type === "FORMSCRIPT_INSERT_COMPANY_NAME") {
+    const value = typeof message.companyName === "string" && message.companyName ? message.companyName : generateRandomCompanyName();
+    return insertOrCopyText(value, sendResponse);
+  }
+  if (message?.type === "FORMSCRIPT_INSERT_RG") {
+    const value = typeof message.rg === "string" && message.rg ? message.rg : generateFormattedRg();
+    return insertOrCopyText(value, sendResponse);
+  }
+  if (message?.type === "FORMSCRIPT_INSERT_ADDRESS") {
+    const value = typeof message.address === "string" && message.address ? message.address : generateRandomAddress();
+    return insertOrCopyText(value, sendResponse);
+  }
+  if (message?.type === "FORMSCRIPT_INSERT_CEP") {
+    const value = typeof message.cep === "string" && message.cep ? message.cep : generateFormattedCep();
+    return insertOrCopyText(value, sendResponse);
+  }
+  if (message?.type === "FORMSCRIPT_INSERT_CELLPHONE") {
+    const value = typeof message.phone === "string" && message.phone ? message.phone : generateFormattedCellPhone();
+    return insertOrCopyText(value, sendResponse);
+  }
+  if (message?.type === "FORMSCRIPT_INSERT_LANDLINE") {
+    const value = typeof message.phone === "string" && message.phone ? message.phone : generateFormattedLandline();
+    return insertOrCopyText(value, sendResponse);
+  }
   if (message?.type === "FORMSCRIPT_FILL_ACTIVE_FORM") {
     fillFirstSavedForm()
       .then(sendResponse)

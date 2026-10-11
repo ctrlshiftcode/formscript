@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "FormScript browser extension for Chrome and Brave.",
   "minimum_chrome_version": "102",
-  "permissions": ["activeTab", "contextMenus", "storage"],
+  "permissions": ["activeTab", "contextMenus", "storage", "clipboardWrite"],
   "background": {
     "service_worker": "src/background/service-worker.js"
   },
