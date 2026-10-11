@@ -33,6 +33,127 @@ function consentIdFor(formKey) {
   return `formscript-${(hash >>> 0).toString(16)}`;
 }
 
+const CRYPTO_KEY_ID = "formscript:crypto_key";
+let cachedCryptoKey = null;
+
+// Convert Uint8Array to base64 string.
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary);
+}
+
+// Convert base64 string to Uint8Array.
+function base64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+// Retrieve or generate the AES-GCM 256-bit encryption key stored in local extension storage.
+async function getCryptoKey() {
+  if (cachedCryptoKey) return cachedCryptoKey;
+
+  const stored = await chrome.storage.local.get(CRYPTO_KEY_ID);
+  if (stored[CRYPTO_KEY_ID]) {
+    const rawKey = base64ToBytes(stored[CRYPTO_KEY_ID]);
+    cachedCryptoKey = await crypto.subtle.importKey(
+      "raw",
+      rawKey,
+      { name: "AES-GCM" },
+      false,
+      ["encrypt", "decrypt"]
+    );
+    return cachedCryptoKey;
+  }
+
+  const generatedKey = await crypto.subtle.generateKey(
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"]
+  );
+  const exported = await crypto.subtle.exportKey("raw", generatedKey);
+  const base64Key = bytesToBase64(new Uint8Array(exported));
+  await chrome.storage.local.set({ [CRYPTO_KEY_ID]: base64Key });
+  cachedCryptoKey = generatedKey;
+  return cachedCryptoKey;
+}
+
+// Encrypt a password string with AES-GCM using a unique 12-byte initialization vector (IV).
+// Returns a tagged payload string: "enc:v1:<iv_base64>:<ciphertext_base64>".
+async function encryptPassword(plainText) {
+  if (!plainText || typeof plainText !== "string") return plainText;
+  try {
+    const key = await getCryptoKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encoded = new TextEncoder().encode(plainText);
+    const cipherBuffer = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      encoded
+    );
+    const ivBase64 = bytesToBase64(iv);
+    const cipherBase64 = bytesToBase64(new Uint8Array(cipherBuffer));
+    return `enc:v1:${ivBase64}:${cipherBase64}`;
+  } catch {
+    return plainText;
+  }
+}
+
+// Decrypt an AES-GCM encrypted password payload ("enc:v1:...").
+// Returns original plaintext string, or input if unencrypted.
+async function decryptPassword(cipherText) {
+  if (typeof cipherText !== "string" || !cipherText.startsWith("enc:v1:")) {
+    return cipherText;
+  }
+  try {
+    const parts = cipherText.split(":");
+    if (parts.length !== 4) return cipherText;
+    const iv = base64ToBytes(parts[2]);
+    const cipherBytes = base64ToBytes(parts[3]);
+    const key = await getCryptoKey();
+    const decryptedBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      cipherBytes
+    );
+    return new TextDecoder().decode(decryptedBuffer);
+  } catch {
+    return cipherText;
+  }
+}
+
+// Encrypt any field marked with type === "password" before persisting.
+async function encryptFields(fields) {
+  return Promise.all(fields.map(async (field) => {
+    if (field?.type === "password" && typeof field.value === "string") {
+      return {
+        ...field,
+        value: await encryptPassword(field.value)
+      };
+    }
+    return field;
+  }));
+}
+
+// Decrypt any encrypted password field before replaying or comparing.
+async function decryptFields(fields) {
+  return Promise.all(fields.map(async (field) => {
+    if (field?.type === "password" && typeof field.value === "string") {
+      return {
+        ...field,
+        value: await decryptPassword(field.value)
+      };
+    }
+    return field;
+  }));
+}
+
 // Accept page messages only when their sender matches the claimed HTTP(S) origin.
 function isFormMessageFromPage(message, sender) {
   if (sender.id !== chrome.runtime.id || !sender.tab?.id || !sender.url) return false;
@@ -160,16 +281,22 @@ async function handleFormSubmitted(message, sender) {
   const fields = sanitizeFields(message.fields);
   if (fields.length === 0) return { ok: true, status: "empty" };
   const hasSavedRecord = Boolean(savedRecord);
-  // Ask for consent only when a submission differs from the stored values.
-  const hasChangedValues = hasSavedRecord && JSON.stringify(savedRecord.fields) !== JSON.stringify(fields);
+  // Compare submitted plain values against decrypted stored values to determine if consent is needed.
+  let hasChangedValues = false;
+  if (hasSavedRecord) {
+    const decryptedSavedFields = await decryptFields(savedRecord.fields);
+    hasChangedValues = JSON.stringify(decryptedSavedFields) !== JSON.stringify(fields);
+  }
   if (hasSavedRecord && !hasChangedValues) return { ok: true, status: "unchanged" };
 
   const consentId = consentIdFor(message.formKey);
   const pendingKey = `${PENDING_PREFIX}${consentId}`;
+  // Encrypt password fields at rest before writing to storage.
+  const encryptedFields = await encryptFields(fields);
   const record = {
     origin: message.origin,
     savedAt: new Date().toISOString(),
-    fields
+    fields: encryptedFields
   };
 
   if (settings?.askBeforeSave === false) {
@@ -216,7 +343,10 @@ async function handleFillRequest(message, sender) {
     SETTINGS_KEY
   ]);
   if (!record) return { ok: true, status: "not-found" };
-  return { ok: true, status: "found", record, settings: settings || {} };
+  // Decrypt any encrypted password fields before returning the record to the page content script.
+  const decryptedFields = await decryptFields(record.fields);
+  const decryptedRecord = { ...record, fields: decryptedFields };
+  return { ok: true, status: "found", record: decryptedRecord, settings: settings || {} };
 }
 
 async function handleConsentDecision(message, sender) {

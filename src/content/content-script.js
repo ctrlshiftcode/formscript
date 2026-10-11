@@ -1,26 +1,41 @@
 const FORM_PREFIX = "formscript:form:";
-const SENSITIVE_FIELD_NAME = /password|passwd|passcode|token|secret|one.?time|verification.?code|\botp\b|\bcvv\b|\bcvc\b|card.?number/i;
+
+// Sensitive field patterns that remain strictly excluded (payment cards, OTP, 2FA codes).
+// Passwords and usernames are allowed and encrypted at rest by the background service worker.
+const SENSITIVE_FIELD_NAME = /token|secret|one.?time|verification.?code|\botp\b|\bcvv\b|\bcvc\b|card.?number/i;
+
+// Autocomplete values that remain excluded (one-time verification codes and credit cards).
 const EXCLUDED_AUTOCOMPLETE = new Set([
-  "current-password",
-  "new-password",
-  "one-time-code",
-  "username"
+  "one-time-code"
 ]);
+
+// Non-fillable input types. Note: "password" is intentionally supported and encrypted at rest.
 const EXCLUDED_INPUT_TYPES = new Set([
   "button",
   "file",
   "hidden",
   "image",
-  "password",
   "reset",
   "submit"
 ]);
-const TEXT_FIELD_TYPES = new Set(["text", "search", "email", "tel", "url"]);
+
+// Eligible text-like input types, including password fields.
+const TEXT_FIELD_TYPES = new Set(["text", "search", "email", "tel", "url", "password"]);
 let contextMenuForm = null;
 let lastContextMenuTarget = null;
 const formFillWidgets = new Map();
 let formFillHost = null;
 let formFillRoot = null;
+
+// Track active password toggle widgets and revealed password inputs.
+const passwordToggleWidgets = new Map();
+const revealedPasswordInputs = new WeakSet();
+let passwordToggleHost = null;
+let passwordToggleRoot = null;
+
+// Clean SVG icons for password visibility toggle (eye open and eye slashed).
+const EYE_OPEN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 7 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_CLOSED_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
 
 function isEditableTextField(control) {
   if (!control || !(control instanceof Element)) return false;
@@ -448,7 +463,12 @@ function positionFormFillWidgets() {
       continue;
     }
 
-    const left = rect.right - buttonSize - inset;
+    // Offset the form fill button to the left if the control also hosts an active password toggle.
+    const hasPasswordToggle = passwordToggleWidgets.has(widget.control) &&
+      !passwordToggleWidgets.get(widget.control).hidden;
+    const rightOffset = hasPasswordToggle ? (buttonSize + inset + 2) : inset;
+
+    const left = rect.right - buttonSize - rightOffset;
     const top = rect.top + (rect.height - buttonSize) / 2;
     if (
       left < 0 ||
@@ -468,6 +488,205 @@ function positionFormFillWidgets() {
     widget.button.hidden = false;
   }
 }
+
+// Keep password visibility toggle buttons in an isolated shadow root so page CSS does not affect styling.
+function ensurePasswordToggleRoot() {
+  if (passwordToggleHost?.isConnected) return passwordToggleRoot;
+
+  passwordToggleHost = document.createElement("div");
+  passwordToggleHost.dataset.formscriptPasswordToggleUi = "true";
+  passwordToggleHost.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none";
+  passwordToggleRoot = passwordToggleHost.attachShadow({ mode: "open" });
+
+  const style = document.createElement("style");
+  style.textContent = `
+    button.formscript-password-toggle {
+      all: initial;
+      position: fixed;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      margin: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: #64748b;
+      cursor: pointer;
+      pointer-events: auto;
+      transition: color 0.15s ease, background-color 0.15s ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    button.formscript-password-toggle:hover {
+      color: #0f172a;
+      background-color: rgba(0, 0, 0, 0.08);
+    }
+    button.formscript-password-toggle:active {
+      background-color: rgba(0, 0, 0, 0.14);
+    }
+    button.formscript-password-toggle:focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 1px;
+    }
+    button.formscript-password-toggle[hidden] {
+      display: none !important;
+    }
+    button.formscript-password-toggle svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+      pointer-events: none;
+    }
+  `;
+  passwordToggleRoot.append(style);
+  document.documentElement.append(passwordToggleHost);
+  return passwordToggleRoot;
+}
+
+// Position eye toggle buttons within the right-hand boundary of eligible password inputs.
+function positionPasswordToggleWidgets() {
+  for (const [input, button] of passwordToggleWidgets) {
+    if (!input.isConnected) {
+      button.remove();
+      passwordToggleWidgets.delete(input);
+      revealedPasswordInputs.delete(input);
+      continue;
+    }
+
+    const rect = input.getBoundingClientRect();
+    if (
+      rect.width === 0 ||
+      rect.height === 0 ||
+      rect.bottom < 0 ||
+      rect.top > window.innerHeight ||
+      rect.right < 0 ||
+      rect.left > window.innerWidth
+    ) {
+      button.hidden = true;
+      continue;
+    }
+
+    const style = window.getComputedStyle(input);
+    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+      button.hidden = true;
+      continue;
+    }
+
+    const inset = 5;
+    const buttonSize = Math.min(
+      24,
+      Math.floor(rect.width - inset * 2),
+      Math.floor(rect.height - 2)
+    );
+    if (buttonSize < 12) {
+      button.hidden = true;
+      continue;
+    }
+
+    const left = rect.right - buttonSize - inset;
+    const top = rect.top + (rect.height - buttonSize) / 2;
+
+    button.style.width = `${buttonSize}px`;
+    button.style.height = `${buttonSize}px`;
+    button.style.left = `${left}px`;
+    button.style.top = `${top}px`;
+    button.hidden = false;
+  }
+}
+
+// Create an eye button that toggles masking for a password input field.
+function createPasswordToggleButton(input) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "formscript-password-toggle";
+  const isRevealed = revealedPasswordInputs.has(input);
+  button.innerHTML = isRevealed ? EYE_CLOSED_SVG : EYE_OPEN_SVG;
+  button.title = isRevealed ? "Hide password" : "Show password";
+  button.setAttribute("aria-label", button.title);
+
+  // Prevent mousedown from moving focus away from the input field.
+  button.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!input.isConnected) return;
+
+    const selectionStart = input.selectionStart;
+    const selectionEnd = input.selectionEnd;
+    const currentlyRevealed = revealedPasswordInputs.has(input);
+
+    if (currentlyRevealed) {
+      input.type = "password";
+      revealedPasswordInputs.delete(input);
+      button.innerHTML = EYE_OPEN_SVG;
+      button.title = "Show password";
+      button.setAttribute("aria-label", "Show password");
+    } else {
+      input.type = "text";
+      revealedPasswordInputs.add(input);
+      button.innerHTML = EYE_CLOSED_SVG;
+      button.title = "Hide password";
+      button.setAttribute("aria-label", "Hide password");
+    }
+
+    // Preserve typing focus and cursor selection position.
+    try {
+      input.focus();
+      if (selectionStart !== null && selectionEnd !== null) {
+        input.setSelectionRange(selectionStart, selectionEnd);
+      }
+    } catch {}
+  });
+
+  return button;
+}
+
+// Scan DOM for password fields and synchronize their visibility toggle widgets.
+function syncPasswordToggleWidgets() {
+  const inputs = Array.from(document.querySelectorAll("input")).filter((input) => {
+    if (!input.isConnected) return false;
+    const type = (input.type || "").toLowerCase();
+    return type === "password" || revealedPasswordInputs.has(input);
+  });
+
+  for (const [input, button] of passwordToggleWidgets) {
+    if (!inputs.includes(input)) {
+      button.remove();
+      passwordToggleWidgets.delete(input);
+      revealedPasswordInputs.delete(input);
+    }
+  }
+
+  if (inputs.length === 0) {
+    passwordToggleHost?.remove();
+    passwordToggleHost = null;
+    passwordToggleRoot = null;
+    return;
+  }
+
+  const root = ensurePasswordToggleRoot();
+  for (const input of inputs) {
+    let button = passwordToggleWidgets.get(input);
+    if (!button) {
+      button = createPasswordToggleButton(input);
+      passwordToggleWidgets.set(input, button);
+    }
+    if (button.parentNode !== root) {
+      root.append(button);
+    }
+  }
+
+  positionPasswordToggleWidgets();
+}
+
 
 function createFormFillButton(form) {
   const button = document.createElement("button");
@@ -557,7 +776,11 @@ function snapshotFields(controls) {
   const occurrences = new Map();
 
   return controls.flatMap((control) => {
-    const type = (control.type || "text").toLowerCase();
+    let type = (control.type || "text").toLowerCase();
+    // Preserve password type even if currently revealed in plaintext by the eye toggle.
+    if (revealedPasswordInputs.has(control)) {
+      type = "password";
+    }
     const identity = `${control.name}\u0000${type}`;
     const index = occurrences.get(identity) || 0;
     occurrences.set(identity, index + 1);
@@ -693,16 +916,28 @@ document.addEventListener("contextmenu", (event) => {
     ? control.form
     : target.closest("form");
 }, true);
+// Reposition both form fill and password visibility toggle widgets on layout changes.
+function repositionAllWidgets() {
+  positionPasswordToggleWidgets();
+  positionFormFillWidgets();
+}
+
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) checkForSavedForms();
+  if (!document.hidden) {
+    checkForSavedForms();
+    syncPasswordToggleWidgets();
+  }
 });
-window.addEventListener("scroll", positionFormFillWidgets, true);
-window.addEventListener("resize", positionFormFillWidgets);
+window.addEventListener("scroll", repositionAllWidgets, true);
+window.addEventListener("resize", repositionAllWidgets);
 
 let badgeCheckTimer;
 const formObserver = new MutationObserver(() => {
   clearTimeout(badgeCheckTimer);
-  badgeCheckTimer = setTimeout(checkForSavedForms, 250);
+  badgeCheckTimer = setTimeout(() => {
+    checkForSavedForms();
+    syncPasswordToggleWidgets();
+  }, 250);
 });
 formObserver.observe(document.documentElement, { childList: true, subtree: true });
 
@@ -810,3 +1045,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 checkForSavedForms();
+syncPasswordToggleWidgets();

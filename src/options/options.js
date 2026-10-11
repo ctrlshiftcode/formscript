@@ -123,7 +123,8 @@ function isValidFormEntry(entry) {
         !Number.isInteger(field.index) ||
         field.index < 0 ||
         typeof field.type !== "string" ||
-        !/^(text|search|email|tel|url|number|date|time|datetime-local|month|week|color|range|textarea|select-one|checkbox|radio)$/.test(field.type)
+        // Allowed field types, including password (which is stored encrypted at rest).
+        !/^(text|search|email|tel|url|number|date|time|datetime-local|month|week|color|range|textarea|select-one|checkbox|radio|password)$/.test(field.type)
       ) {
         return false;
       }
@@ -152,11 +153,13 @@ function validateBackup(backup) {
   }
 
   const settings = backup.settings && typeof backup.settings === "object" ? backup.settings : {};
+  const cryptoKey = typeof backup.cryptoKey === "string" ? backup.cryptoKey : null;
   return {
     settings: {
       askBeforeSave: settings.askBeforeSave !== false,
       fillOnlyEmpty: settings.fillOnlyEmpty === true
     },
+    cryptoKey,
     forms: backup.forms
   };
 }
@@ -171,6 +174,8 @@ async function exportBackup() {
     version: 1,
     exportedAt: new Date().toISOString(),
     settings: { ...DEFAULT_SETTINGS, ...(stored[SETTINGS_KEY] || {}) },
+    // Include the storage encryption key so encrypted passwords can be restored seamlessly.
+    cryptoKey: stored["formscript:crypto_key"] || null,
     forms
   };
 
@@ -198,6 +203,10 @@ async function restoreBackup(file) {
 
   const restoredData = Object.fromEntries(backup.forms.map(({ key, record }) => [key, record]));
   restoredData[SETTINGS_KEY] = backup.settings;
+  // Restore the encryption key if one was included in the backup.
+  if (backup.cryptoKey) {
+    restoredData["formscript:crypto_key"] = backup.cryptoKey;
+  }
   await chrome.storage.local.set(restoredData);
   await loadSettings();
   await loadSavedForms();
